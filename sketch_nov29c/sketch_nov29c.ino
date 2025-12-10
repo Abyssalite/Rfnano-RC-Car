@@ -1,18 +1,24 @@
 #include <Wire.h>
+#include <Servo.h>
 
 #define SLAVE_ADDR 8 
 
+Servo servo1;
+Servo servo2;
+
 // Store received data temporarily
-byte args[16] = {0};  // max arguments
-byte argCount = 0;
+uint8_t args[10] = {0};  // max arguments
+uint8_t argCount = 0;
 union {
-  byte     singleByte;
-  int      intArray[8];
+  uint16_t      singleInt;
+  uint16_t      intArray[8];
 } result;
-bool returnSingleByte = true;
+bool returnSingleInt = true;
 
 void setup() {
-  Wire.begin((byte)SLAVE_ADDR);
+  analogReference(DEFAULT);
+  
+  Wire.begin(SLAVE_ADDR);
   Wire.onReceive(receiveEvent);  // When master sends data
   Wire.onRequest(requestEvent);  // When master requests data
 }
@@ -20,23 +26,25 @@ void setup() {
 void loop() {
 }
 
-void receiveEvent(int receive) {
+void receiveEvent(uint8_t receive) {
   if (receive < 1) return;
 
-  byte functionId = Wire.read();  // First byte is function number
+  uint8_t functionId = Wire.read();  // First byte is function number
   argCount = receive - 1;
   
   // Read all remaining bytes as arguments
-  for (byte i = 0; i < argCount && Wire.available(); i++) {
+  for (uint8_t i = 0; i < argCount && Wire.available(); i++) {
     args[i] = Wire.read();
   }
-  returnSingleByte = true;
+  returnSingleInt = true;
 
   switchFunction(&functionId);
 }
 
-void readPin() {
-  for (byte i = 0; i < argCount ; i++) {
+void read8Pin() {
+  returnSingleInt = false;
+
+  for (uint8_t i = 0; i < 8 ; i++) {
     if (args[i] < 14)
       result.intArray[i] = digitalRead(args[i]); 
     else if (args[i] < 18)
@@ -44,33 +52,46 @@ void readPin() {
   }
 }
 
+void read1Pin() {
+  if (args[0] < 14)
+    result.singleInt = digitalRead(args[0]); 
+  else if (args[0] < 18)
+    result.singleInt = analogRead(args[0]); 
+}
+
 void writePin() {
   bool value = args[0];
-  for (byte i = 1; i <= argCount - 1 ; i++) {
+  for (uint8_t i = 1; i <= argCount - 1 ; i++) {
     if (args[i] < 18)
       digitalWrite(args[i], value);
   }
 
-  result.singleByte = 3;
+  result.singleInt = 2003;
 }
 
 
 void setPin() {
   bool value = args[0];
-  for (byte i = 1; i <= argCount - 1 ; i++)
+  for (uint8_t i = 1; i <= argCount - 1 ; i++)
     if (args[i] < 18){
       pinMode(args[i], value); 
   }
 
-  result.singleByte = 2;
+  result.singleInt = 2002;
 }
 
-void sendIrValues() {
-  result.singleByte = 0;
+void getUltrasonicDistance() {
+  digitalWrite(args[0], 0);
+  delayMicroseconds(2);
+  digitalWrite(args[0], 1);
+  delayMicroseconds(10);
+  digitalWrite(args[0], 0);
+  uint32_t val = pulseIn(args[1], 1)*340/1000;
 
+  result.singleInt = (uint16_t)val/2;  
 }
 
-void switchFunction(byte *functionId) {
+void switchFunction(uint8_t* functionId) {
  
   switch (*functionId) {
 
@@ -88,28 +109,52 @@ void switchFunction(byte *functionId) {
       break;
     }
       
-    case 4: {  // read pin
-      if (argCount > 0 && argCount < 9) 
-        readPin();
+    case 4: {  // read 1 pin
+      if (argCount == 1) 
+        read1Pin();
      
       break;
     }  
 
-    case 5: {  // read Ir values
-      sendIrValues();
+    case 5: {  // read 8 pins
+      if (argCount == 8) 
+        read8Pin();
+        
+      break;
+    }
+
+    case 7: {  // calculate Ultrasonic distance
+      if (argCount == 2) 
+        getUltrasonicDistance();
+     
+      break;
+    }
+
+    case 8: {  // attach servo
+      if (argCount == 2) 
+        servo1.attach(args[0]);
+        servo2.attach(args[1]);   
+     
+      break;
+    }
+
+    case 9: {  // control servo
+      if (argCount == 2) 
+        servo1.write(args[0]);
+        servo2.write(args[1]);   
+     
       break;
     }
 
     default:
-      result.singleByte = 255;
       break;
   }
 }
 
 void requestEvent() {
-  if (returnSingleByte) {
-    Wire.write(result.singleByte);               // 1 byte
+  if (returnSingleInt) {
+    Wire.write((uint8_t*)&result.singleInt, (uint8_t)2);               // 2 byte
   } else {
-    Wire.write((byte*)result.intArray, 16);      // 8 × int = 16 bytes
+    Wire.write((uint8_t*)&result.intArray, (uint8_t)16);      // 8 × int = 16 bytes
   }
 }
