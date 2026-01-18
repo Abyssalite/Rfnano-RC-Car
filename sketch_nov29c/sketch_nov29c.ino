@@ -15,32 +15,6 @@ union {
 } result;
 bool returnSingleInt = true;
 
-void setup() {
-  analogReference(DEFAULT);
-  
-  Wire.begin(SLAVE_ADDR);
-  Wire.onReceive(receiveEvent);  // When master sends data
-  Wire.onRequest(requestEvent);  // When master requests data
-}
-
-void loop() {
-}
-
-void receiveEvent(uint8_t receive) {
-  if (receive < 1) return;
-
-  uint8_t functionId = Wire.read();  // First byte is function number
-  argCount = receive - 1;
-  
-  // Read all remaining bytes as arguments
-  for (uint8_t i = 0; i < argCount && Wire.available(); i++) {
-    args[i] = Wire.read();
-  }
-  returnSingleInt = true;
-
-  switchFunction(&functionId);
-}
-
 void read8Pin() {
   returnSingleInt = false;
 
@@ -69,7 +43,6 @@ void writePin() {
   result.singleInt = 2003;
 }
 
-
 void setPin() {
   bool value = args[0];
   for (uint8_t i = 1; i <= argCount - 1 ; i++)
@@ -86,7 +59,7 @@ void getUltrasonicDistance() {
   digitalWrite(args[0], 1);
   delayMicroseconds(10);
   digitalWrite(args[0], 0);
-  uint32_t val = pulseIn(args[1], 1)*340/1000;
+  uint32_t val = pulseIn(args[1], 1, 30000)*340/1000;
 
   result.singleInt = (uint16_t)val/2;  
 }
@@ -151,10 +124,36 @@ void switchFunction(uint8_t* functionId) {
   }
 }
 
+void receiveEvent(uint8_t receive) {
+  if (receive < 1) return;
+
+  uint8_t functionId = Wire.read();  // First byte is function number
+  argCount = receive - 1;
+  
+  // Read all remaining bytes as arguments
+  for (uint8_t i = 0; i < argCount && Wire.available(); i++) {
+    args[i] = Wire.read();
+  }
+  returnSingleInt = true;
+
+  switchFunction(&functionId);
+}
+
 void requestEvent() {
   if (returnSingleInt) {
     Wire.write((uint8_t*)&result.singleInt, (uint8_t)2);               // 2 byte
   } else {
     Wire.write((uint8_t*)&result.intArray, (uint8_t)16);      // 8 × int = 16 bytes
   }
+}
+
+void setup() {
+  analogReference(DEFAULT);
+  
+  Wire.begin(SLAVE_ADDR);
+  Wire.onReceive(receiveEvent);  // When master sends data
+  Wire.onRequest(requestEvent);  // When master requests data
+}
+
+void loop() {
 }
