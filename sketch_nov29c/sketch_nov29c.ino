@@ -10,8 +10,8 @@ Servo servo2;
 uint8_t args[10] = {0};  // max arguments
 uint8_t argCount = 0;
 union {
-  uint16_t      singleInt;
-  uint16_t      intArray[8];
+  uint16_t     singleInt;
+  uint8_t      intArray[8];
 } result;
 bool returnSingleInt = true;
 
@@ -22,7 +22,7 @@ void read8Pin() {
     if (args[i] < 14)
       result.intArray[i] = digitalRead(args[i]); 
     else if (args[i] < 18)
-      result.intArray[i] = analogRead(args[i]); 
+      result.intArray[i] = map(analogRead(args[i]), 0, 1023, 0, 255); 
   }
 }
 
@@ -143,7 +143,7 @@ void requestEvent() {
   if (returnSingleInt) {
     Wire.write((uint8_t*)&result.singleInt, (uint8_t)2);               // 2 byte
   } else {
-    Wire.write((uint8_t*)&result.intArray, (uint8_t)16);      // 8 × int = 16 bytes
+    Wire.write((uint8_t*)&result.intArray, (uint8_t)8);      // 8 × byte = 8 bytes
   }
 }
 

@@ -11,14 +11,25 @@
 RF24 radio(CE_PIN, CSN_PIN);
 
 const byte address[6] = "1Node";          // Same address on BOTH boards
-const unsigned long RF_PERIOD = 500; 
+const unsigned long RF_PERIOD = 200; 
 unsigned long rfTimer = 0;
 
-struct Payload {
-  uint8_t nodeId;
-  uint16_t value;
+struct SendPayload {
+    uint8_t digitalIR[4];
+    uint8_t analogIR[4];
+    uint16_t distanceSensor[3];
+    int16_t gyro[3];
+    uint8_t batt;
 };
-Payload payload;
+SendPayload sendPayload;
+struct ReceivePayload {
+    uint8_t joystick1[2];
+    uint8_t joystick2[2];
+    uint8_t digitalButton[6];
+    uint8_t analogButton;
+    uint8_t batt;
+};
+ReceivePayload receivePayload;
 
 VL53L1X sensor;
 MPU6050 mpu;
@@ -27,7 +38,6 @@ const unsigned long GYRO_PERIOD = 10;   // 100 Hz
 
 uint8_t servo1Value;
 uint8_t servo2Value;
-uint8_t value = 0;
 
 // Pitch, Roll and Yaw values
 float pitch = 0;
@@ -50,19 +60,19 @@ uint16_t masterCallInt(uint8_t func, const uint8_t* args = nullptr, uint8_t len 
 }
 
 // 8-int return
-uint8_t masterCallIntArray(uint8_t func, const uint8_t* args = nullptr, uint8_t len = 0, uint16_t* results = nullptr, uint8_t resultslen = 0) {
+uint8_t masterCallIntArray(uint8_t func, const uint8_t* args = nullptr, uint8_t len = 0, uint8_t* results = nullptr, uint8_t resultslen = 0) {
   Wire.beginTransmission((uint8_t)SLAVE_ADDR);
   Wire.write(func);
   if (args && len == 8) Wire.write(args, len);
   Wire.endTransmission();
 
-  if (Wire.requestFrom((uint8_t)SLAVE_ADDR, (uint8_t)16) != 16 || resultslen != 16) return 254;
+  if (Wire.requestFrom((uint8_t)SLAVE_ADDR, (uint8_t)8) != 8 || resultslen != 8) return 254;
 
-  uint8_t buffer[16];
-  Wire.readBytes(buffer, 16);
+  uint8_t buffer[8];
+  Wire.readBytes(buffer, 8);
 
   for (uint8_t i = 0; i < 8; i++) {
-    results[i] = buffer[i*2] | (buffer[i*2+1] << 8);  // little-endian
+    results[i] = buffer[i] | (buffer[i+1] << 8);  // little-endian
   }
   return 0;
 }
@@ -129,36 +139,37 @@ void setup() {
 void loop() {
   // 1. RECEIVE PART (always active)
   if (radio.available()) {
-    radio.read(&payload, sizeof(payload));
+    radio.read(&receivePayload, sizeof(receivePayload));
+    
+    Serial.print(map(receivePayload.joystick1[0], 0, 255, 0, 740));
+    Serial.print(" ");
+    Serial.print(map(receivePayload.joystick1[1], 0, 255, 0, 740));
+    Serial.print(" ");
+    Serial.print(map(receivePayload.joystick2[0], 0, 255, 0, 740));
+    Serial.print(" ");
+    Serial.print(map(receivePayload.joystick2[1], 0, 255, 0, 740));
+    Serial.print(" ");
+    Serial.print(map(receivePayload.analogButton, 0, 255, 0, 600));
+    Serial.print(" ");
+    Serial.print(map(receivePayload.batt, 0, 255, 0, 1023));
+    Serial.print(" ");
 
-    Serial.print(F("Received from node "));
-    Serial.print(payload.nodeId);
-    Serial.print(F(" → value="));
-    Serial.println(payload.value);
+    Serial.print(receivePayload.digitalButton[0]);
+    Serial.print(" ");
+    Serial.print(receivePayload.digitalButton[1]);
+    Serial.print(" ");
+    Serial.print(receivePayload.digitalButton[2]);
+    Serial.print(" ");
+    Serial.print(receivePayload.digitalButton[3]);
+    Serial.print(" ");
+    Serial.print(receivePayload.digitalButton[4]);
+    Serial.print(" ");
+    Serial.println(receivePayload.digitalButton[5]);
   }
 
-  Serial.println(sensor.read());  
-  //Serial.println(masterCallInt(7, B(0,1), 2));
-  //Serial.println(masterCallInt(7, B(2,3), 2));
-  //Serial.print(analogRead(A7));
-
-  uint16_t values[8];
+  const uint16_t sensors[3] = {sensor.read(), masterCallInt(7, B(0,1), 2), masterCallInt(7, B(2,3), 2)};
+  uint8_t values[8];
   masterCallIntArray(5, B(10, 11, 12, 13, 14, 15, 16, 17), 8, values, sizeof(values));
-  Serial.print(values[0]);
-  Serial.print(values[1]);
-  Serial.print(values[2]);
-  Serial.print(values[3]);
-  Serial.print(values[4]);
-  Serial.print(values[5]);
-  Serial.print(values[6]);
-  Serial.println(values[7]);
-
-  if(value%2 == 0)
-    masterCallInt(9, B(5, 180), 2);
-  else
-    masterCallInt(9, B(180, 180), 2);
-  motor(4,5,1,60);
-  value++;
 
   unsigned long now = millis();
   if (now - gyroTimer >= GYRO_PERIOD){
@@ -168,28 +179,45 @@ void loop() {
       roll  += norm.XAxis * 0.01;
       yaw   += norm.ZAxis * 0.01;
 
-      // Output raw
-      Serial.print(" Pitch = ");
-      Serial.print(pitch);
-      Serial.print(" Roll = ");
-      Serial.print(roll);  
-      Serial.print(" Yaw = ");
-      Serial.println(yaw);
+      pitch = (abs(pitch) > 18.0)? pitch * -1 : pitch;
+      roll = (abs(roll) > 18.0)? roll * -1 : roll;
+      yaw = (abs(yaw) > 18.0)? yaw * -1 : yaw;
+
+      sendPayload.gyro[0] = (int16_t)(pitch * 100.0f);
+      sendPayload.gyro[1] = (int16_t)(roll * 100.0f);
+      sendPayload.gyro[2] = (int16_t)(yaw * 100.0f);
   }
+
+  /*masterCallInt(9, B(5, 180), 2);
+  masterCallInt(9, B(180, 180), 2);*/
+
+  motor(4,5,1,60);
 
   // 2. TRANSMIT PART (every 100 ms)
   if (now - rfTimer >= RF_PERIOD){
     rfTimer = now;
     radio.stopListening();              // switch to TX mode
 
-    payload.nodeId = 2;                 // Change to 2 on the other board!
-    payload.value = analogRead(A7);
+    sendPayload.digitalIR[0] = values[0];
+    sendPayload.digitalIR[1] = values[1];
+    sendPayload.digitalIR[2] = values[2];
+    sendPayload.digitalIR[3] = values[3];
 
-    bool ok = radio.write(&payload, sizeof(payload));
+    sendPayload.analogIR[0] = values[4];
+    sendPayload.analogIR[1] = values[5];
+    sendPayload.analogIR[2] = values[6];
+    sendPayload.analogIR[3] = values[7];
 
-    Serial.print(F("Sent "));
-    Serial.print(payload.value);
-    Serial.println(ok ? F(" → OK") : F(" → FAILED"));
+    sendPayload.distanceSensor[0] = sensors[0];
+    sendPayload.distanceSensor[1] = sensors[1];
+    sendPayload.distanceSensor[2] = sensors[2];
+
+    sendPayload.batt = map(analogRead(A7), 0, 1023, 0, 255);
+
+    bool ok = radio.write(&sendPayload, sizeof(sendPayload));
+
+    //Serial.print(F("Sent"));
+    //Serial.println(ok ? F(" → OK") : F(" → FAILED"));
 
     radio.startListening();             // back to RX mode
   }

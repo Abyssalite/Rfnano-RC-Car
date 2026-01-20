@@ -1,6 +1,5 @@
 #include <SPI.h>
 #include <RF24.h>
-#include <SoftPWM.h>
 
 #define CE_PIN  10
 #define CSN_PIN  9
@@ -11,12 +10,22 @@ const byte address[6] = "1Node";          // Same address on BOTH boards
 const unsigned long RF_PERIOD = 30; 
 unsigned long rfTimer = 0;
 
-struct Payload {
-  uint8_t nodeId;
-  uint16_t value;
+struct SendPayload {
+    uint8_t joystick1[2];
+    uint8_t joystick2[2];
+    uint8_t digitalButton[6];
+    uint8_t analogButton;
+    uint8_t batt;
 };
-Payload payload;
-
+SendPayload sendPayload;
+struct ReceivePayload {
+    uint8_t digitalIR[4];
+    uint8_t analogIR[4];
+    uint16_t distanceSensor[3];
+    int16_t gyro[3];
+    uint8_t batt;
+};
+ReceivePayload receivePayload;
 
 void setup() {
   Serial.begin(9600);
@@ -45,41 +54,42 @@ void setup() {
 void loop() {
   // 1. RECEIVE PART (always active)
   if (radio.available()) {
-    radio.read(&payload, sizeof(payload));
+    radio.read(&receivePayload, sizeof(receivePayload));
 
-    Serial.print(F("Received from node "));
-    Serial.print(payload.nodeId);
-    Serial.print(F(" → value="));
-    Serial.println(payload.value);
+    Serial.print(receivePayload.distanceSensor[0]);
+    Serial.print(" ");
+    Serial.print(receivePayload.distanceSensor[1]);
+    Serial.print(" ");
+    Serial.print(receivePayload.distanceSensor[2]);
+    Serial.print(" ");
+    Serial.print(receivePayload.gyro[0]);
+    Serial.print(" ");
+    Serial.print(receivePayload.gyro[1]);
+    Serial.print(" ");
+    Serial.print(receivePayload.gyro[2]);
+    Serial.print(" ");
+    Serial.print(map(receivePayload.batt, 0, 255, 0, 1023));
+    Serial.print(" ");
+
+    Serial.print(receivePayload.digitalIR[0]);
+    Serial.print(" ");
+    Serial.print(receivePayload.digitalIR[1]);
+    Serial.print(" ");
+    Serial.print(receivePayload.digitalIR[2]);
+    Serial.print(" ");
+    Serial.print(receivePayload.digitalIR[3]);
+    Serial.print(" ");
+    Serial.print(receivePayload.analogIR[0]);
+    Serial.print(" ");
+    Serial.print(receivePayload.analogIR[1]);
+    Serial.print(" ");
+    Serial.print(receivePayload.analogIR[2]);
+    Serial.print(" ");
+    Serial.println(receivePayload.analogIR[3]);
   }
 
-  /*Serial.print(analogRead(A0));
-  Serial.print(" ");
-  Serial.print(analogRead(A1));
-  Serial.print(" ");
-  Serial.print(analogRead(A2));
-  Serial.print(" ");
-  Serial.print(analogRead(A3));
-  Serial.print(" ");
-  Serial.print(analogRead(A6));
-  Serial.print(" ");
-  Serial.print(analogRead(A7));
-  Serial.print(" ");
-  Serial.print(digitalRead(0));
-  Serial.print(" ");
-  Serial.print(digitalRead(2));
-  Serial.print(" ");
-  Serial.print(digitalRead(3));
-  Serial.print(" ");
-  Serial.print(digitalRead(4));
-  Serial.print(" ");
-  Serial.print(digitalRead(7));
-  Serial.print(" ");
-  Serial.println(digitalRead(8));*/
-
-  analogWrite(5, analogRead(A0) / 4);
-  analogWrite(6, analogRead(A6) / 4);
-
+  //analogWrite(5, analogRead(A0) / 4);
+  //analogWrite(6, analogRead(A6) / 4);
 
   unsigned long now = millis();
   // 2. TRANSMIT PART (every 100 ms)
@@ -87,14 +97,26 @@ void loop() {
     rfTimer = now;
     radio.stopListening();              // switch to TX mode
 
-    payload.nodeId = 1;                 // Change to 2 on the other board!
-    payload.value = analogRead(A7);
+    sendPayload.joystick1[0] = map(analogRead(A0), 0, 740, 0, 255);
+    sendPayload.joystick1[1] = map(analogRead(A1), 0, 740, 0, 255);
 
-    bool ok = radio.write(&payload, sizeof(payload));
+    sendPayload.joystick2[0] = map(analogRead(A2), 0, 740, 0, 255);
+    sendPayload.joystick2[1] = map(analogRead(A3), 0, 740, 0, 255);
 
-    Serial.print(F("Sent "));
-    Serial.print(payload.value);
-    Serial.println(ok ? F(" → OK") : F(" → FAILED"));
+    sendPayload.digitalButton[0] = digitalRead(0);
+    sendPayload.digitalButton[1] = digitalRead(2);
+    sendPayload.digitalButton[2] = digitalRead(3);
+    sendPayload.digitalButton[3] = digitalRead(4);
+    sendPayload.digitalButton[4] = digitalRead(7);
+    sendPayload.digitalButton[5] = digitalRead(8);
+
+    sendPayload.analogButton = map(analogRead(A6), 0, 600, 0, 255);
+    sendPayload.batt = map(analogRead(A7), 0, 1023, 0, 255);
+
+    bool ok = radio.write(&sendPayload, sizeof(sendPayload));
+
+    //Serial.print(F("Sent"));
+    //Serial.println(ok ? F(" → OK") : F(" → FAILED"));
 
     radio.startListening();             // back to RX mode
   }
