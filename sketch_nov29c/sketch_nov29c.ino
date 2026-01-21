@@ -1,6 +1,6 @@
 #include <Wire.h>
 #include <Servo.h>
-
+#include <LedControl.h>
 #define SLAVE_ADDR 8 
 
 Servo servo1;

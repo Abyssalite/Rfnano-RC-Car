@@ -226,7 +226,7 @@ unsigned long now = millis();
     sendPayload.distanceSensor[1] = sensors[1];
     sendPayload.distanceSensor[2] = sensors[2];
 
-    sendPayload.batt = map(analogRead(A7), 0, 1023, 0, 255);
+    sendPayload.batt = map(analogRead(A6), 0, 1023, 0, 255);
 
     bool ok = radio.write(&sendPayload, sizeof(sendPayload));
 
