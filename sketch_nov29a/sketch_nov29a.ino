@@ -11,8 +11,13 @@
 RF24 radio(CE_PIN, CSN_PIN);
 
 const byte address[6] = "1Node";          // Same address on BOTH boards
-const unsigned long RF_PERIOD = 200; 
+const uint8_t RF_PERIOD = 300; 
 unsigned long rfTimer = 0;
+
+const uint8_t FRONT_LEFT[2] = {A1, A0}; 
+const uint8_t FRONT_RIGHT[2] = {8, 7};  
+const uint8_t REAR_LEFT[2] = {A3, A2};  
+const uint8_t REAR_RIGHT[2] = {4, 2}; ; 
 
 struct SendPayload {
     uint8_t digitalIR[4];
@@ -23,8 +28,8 @@ struct SendPayload {
 };
 SendPayload sendPayload;
 struct ReceivePayload {
-    uint8_t joystick1[2];
-    uint8_t joystick2[2];
+    int8_t joystick1[2];
+    int8_t joystick2[2];
     uint8_t digitalButton[6];
     uint8_t analogButton;
     uint8_t batt;
@@ -34,7 +39,7 @@ ReceivePayload receivePayload;
 VL53L1X sensor;
 MPU6050 mpu;
 unsigned long gyroTimer = 0;
-const unsigned long GYRO_PERIOD = 10;   // 100 Hz
+const uint8_t GYRO_PERIOD = 10;   // 100 Hz
 
 uint8_t servo1Value;
 uint8_t servo2Value;
@@ -77,21 +82,29 @@ uint8_t masterCallIntArray(uint8_t func, const uint8_t* args = nullptr, uint8_t 
   return 0;
 }
 
-void motor(int pin1, int pin2, int direction, int speed) {
-  speed = constrain(speed, 0, 100);
+void motor(int pin1, int pin2, int& speed) {
+  speed = map(speed, -126, 126, -100, 100);
+  speed = constrain(speed, -100, 100);
 
-  if (direction == 1) {
+  if (speed > 10) {
     SoftPWMSetPercent(pin2, 0);
     SoftPWMSetPercent(pin1, speed);
   } 
-  else if (direction == -1) {
+  else if (speed < -10) {
     SoftPWMSetPercent(pin1, 0);
-    SoftPWMSetPercent(pin2, speed);
+    SoftPWMSetPercent(pin2, abs(speed));
   }
   else {
     SoftPWMSetPercent(pin1, 0);
     SoftPWMSetPercent(pin2, 0);
   }
+}
+
+void moveFordward(int speed){
+  motor(FRONT_LEFT[0],FRONT_LEFT[1],speed);
+  motor(FRONT_RIGHT[0],FRONT_RIGHT[1],speed);
+  motor(REAR_LEFT[0],REAR_LEFT[1],speed);
+  motor(REAR_RIGHT[0],REAR_RIGHT[1],speed);
 }
 
 void setup() {  
@@ -117,15 +130,16 @@ void setup() {
   mpu.calibrateGyro();
   mpu.setThreshold(3);
 
-  sensor.setTimeout(100);
   sensor.init();
+  sensor.setTimeout(50);
   sensor.setDistanceMode(VL53L1X::Long);
-  sensor.setMeasurementTimingBudget(50000);
+  sensor.setMeasurementTimingBudget(33000);
   sensor.startContinuous(50);
 
-  for (int i = 4; i < 8; i++) {
-    SoftPWMSet(i, 0);
-  }
+  SoftPWMSet(0, 0);
+  SoftPWMSet(4, 0);
+  SoftPWMSet(7, 0);
+  SoftPWMSet(8, 0);
   SoftPWMSet(A0, 0);
   SoftPWMSet(A1, 0);
   SoftPWMSet(A2, 0);
@@ -141,13 +155,13 @@ void loop() {
   if (radio.available()) {
     radio.read(&receivePayload, sizeof(receivePayload));
     
-    Serial.print(map(receivePayload.joystick1[0], 0, 255, 0, 740));
+    Serial.print(receivePayload.joystick1[0]);
     Serial.print(" ");
-    Serial.print(map(receivePayload.joystick1[1], 0, 255, 0, 740));
+    Serial.print(receivePayload.joystick1[1]);
     Serial.print(" ");
-    Serial.print(map(receivePayload.joystick2[0], 0, 255, 0, 740));
+    Serial.print(receivePayload.joystick2[0]);
     Serial.print(" ");
-    Serial.print(map(receivePayload.joystick2[1], 0, 255, 0, 740));
+    Serial.print(receivePayload.joystick2[1]);
     Serial.print(" ");
     Serial.print(map(receivePayload.analogButton, 0, 255, 0, 600));
     Serial.print(" ");
@@ -171,7 +185,7 @@ void loop() {
   uint8_t values[8];
   masterCallIntArray(5, B(10, 11, 12, 13, 14, 15, 16, 17), 8, values, sizeof(values));
 
-  unsigned long now = millis();
+unsigned long now = millis();
   if (now - gyroTimer >= GYRO_PERIOD){
       gyroTimer = now;
       Vector norm = mpu.readNormalizeGyro();
@@ -190,8 +204,8 @@ void loop() {
 
   /*masterCallInt(9, B(5, 180), 2);
   masterCallInt(9, B(180, 180), 2);*/
-
-  motor(4,5,1,60);
+  
+  moveFordward(receivePayload.joystick2[1]);
 
   // 2. TRANSMIT PART (every 100 ms)
   if (now - rfTimer >= RF_PERIOD){

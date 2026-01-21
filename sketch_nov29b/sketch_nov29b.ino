@@ -7,12 +7,12 @@
 RF24 radio(CE_PIN, CSN_PIN);
 
 const byte address[6] = "1Node";          // Same address on BOTH boards
-const unsigned long RF_PERIOD = 30; 
+const uint8_t RF_PERIOD = 30; 
 unsigned long rfTimer = 0;
 
 struct SendPayload {
-    uint8_t joystick1[2];
-    uint8_t joystick2[2];
+    int8_t joystick1[2];
+    int8_t joystick2[2];
     uint8_t digitalButton[6];
     uint8_t analogButton;
     uint8_t batt;
@@ -97,11 +97,11 @@ void loop() {
     rfTimer = now;
     radio.stopListening();              // switch to TX mode
 
-    sendPayload.joystick1[0] = map(analogRead(A0), 0, 740, 0, 255);
-    sendPayload.joystick1[1] = map(analogRead(A1), 0, 740, 0, 255);
+    sendPayload.joystick1[0] = map(analogRead(A0), 0, 740, 0, 255) - 120;
+    sendPayload.joystick1[1] = map(analogRead(A1), 0, 740, 0, 255) - 124;
 
-    sendPayload.joystick2[0] = map(analogRead(A2), 0, 740, 0, 255);
-    sendPayload.joystick2[1] = map(analogRead(A3), 0, 740, 0, 255);
+    sendPayload.joystick2[0] = map(analogRead(A2), 0, 740, 0, 255) - 122;
+    sendPayload.joystick2[1] = map(analogRead(A3), 0, 740, 0, 255) - 125; 
 
     sendPayload.digitalButton[0] = digitalRead(0);
     sendPayload.digitalButton[1] = digitalRead(2);
